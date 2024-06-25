@@ -1,0 +1,114 @@
+#this file for performing HTTP CRUD operations on data without db.
+
+from fastapi import FastAPI,Response,status,HTTPException
+from fastapi.params import Body
+from pydantic import BaseModel
+from random import randrange
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import time
+
+app = FastAPI()
+
+class Post(BaseModel):
+    title: str
+    content: str
+    published: bool = True
+
+ #conneting to postgres database   
+while True:
+    try:
+        conn = psycopg2.connect(host='localhost', database='fastapi', user='postgres', 
+                                password='12345',cursor_factory=RealDictCursor)
+        cursor= conn.cursor()
+        print("database connection was successful")
+        break
+    except Exception as error:
+        print("Connection to database was failed")
+        print("Error: ",error)   
+        time.sleep(5)
+ 
+     
+
+my_post = [{"title":"post 1","content":"content of post1","id":1},{"title":"post 2","content":"content of post2","id":2}]
+
+@app.get("/")
+async def root():
+    #print("Hello Python")
+    return {"message": "Welcome to my APi"}
+
+@app.get("/posts")
+def get_posts():
+    cursor.execute("""SELECT * FROM posts  """)
+    posts= cursor.fetchall()
+    return {"Data": posts}
+
+def find_post(id):
+    for p in my_post:
+        if p["id"] == id:
+            return p
+        
+#find  post index to delete it
+def find_post_index(id):
+    for i,p in enumerate(my_post):
+        if p['id']== id:
+            return i 
+
+@app.get("/posts/latest")
+def get_latest_post():
+    post = my_post[len(my_post)-1]
+    return {"details": post}
+
+@app.get("/posts/{id}")
+def get_post(id: int, response: Response):
+    post = find_post(id)
+    if not post:
+        raise HTTPException(status_code= status.HTTP_404_NOT_FOUND,detail=f"post with {id} was not found")
+        #response.status_code = status.HTTP_404_NOT_FOUND
+        #return {'message':f"post with {id} was not found"}
+    return{"post_details":post}
+
+#create post or insert data in database
+@app.post("/posts",status_code=status.HTTP_201_CREATED)
+def create_posts(post: Post):
+    #cursor.execute(f"INSERT INTO posts (title,content,published) VALUES({post.title},{post.content},{post.published})")
+    cursor.execute("""INSERT INTO posts (title,content,published) VALUES(%s,%s,%s) RETURNING *""",
+                   (post.title, post.content, post.published))
+    new_post = cursor.fetchone()
+    conn.commit()
+    return {"data": new_post}
+
+"""@app.post("/posts",status_code=status.HTTP_201_CREATED)
+def create_posts(post: Post):
+    post_dict = post.model_dump()
+    post_dict['id'] = randrange(0,1000)
+    my_post.append(post_dict)
+    return {"data": my_post}
+this method create post in my_post variable
+    """
+
+@app.delete("/posts/{id}", status_code= status.HTTP_204_NO_CONTENT)
+def delete_post(id: int):
+    index = find_post_index(id)
+    
+    if index == None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id:{id} is not found")
+    
+    my_post.pop(index)
+    #return {"message":"Post successfully deleted"}
+    return Response(status_code= status.HTTP_204_NO_CONTENT)
+    
+
+ #update operation
+@app.put("/posts/{id}")
+def post_update(id: int,post: Post):
+    index = find_post_index(id)
+    
+    if index == None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id:{id} is not found")
+     
+    post_dict = post.model_dump()
+    post_dict['id'] = id
+    my_post[index] = post_dict
+    return {"data": post_dict} 
+   
